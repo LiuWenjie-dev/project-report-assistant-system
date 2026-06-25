@@ -1,0 +1,21 @@
+{
+  "email_settings": {
+    "default_subject_prefix": "[Weekly Report]",
+    "default_to": "",
+    "default_cc": "",
+    "signature": "Best regards,\n[Your Name]",
+    "subject_prefix": "[Weekly Report]"
+  },
+  "ui_settings": {
+    "window_width": 1200,
+    "window_height": 800,
+    "theme": "light"
+  },
+  "api_settings": {
+    "request_timeout": 30,
+    "max_retries": 3
+  },
+  "login_options": {
+    "remember_me": false
+  }
+}

@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Test Project",
+    "jira_project_key": "TEST",
+    "confluence_page_url": "https://example.com/test",
+    "confluence_page_id": "12345"
+  }
+]
