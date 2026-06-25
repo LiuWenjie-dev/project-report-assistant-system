@@ -7,7 +7,7 @@ import requests
 from typing import Dict, Any, Optional
 import re
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote_plus
 
 from utils.config_manager import get_config_manager
 
@@ -47,29 +47,44 @@ class ConfluenceClient:
         try:
             parsed = urlparse(url)
             query_params = parse_qs(parsed.query)
-            
-            # 尝试从pageId参数获取
+
             if "pageId" in query_params:
                 return query_params["pageId"][0]
-            
-            # 尝试从路径中提取（常见格式：/display/SPACE/page-title?pageId=12345）
+
             path_parts = parsed.path.split('/')
             for part in path_parts:
-                if part.isdigit() and len(part) > 4:  # Confluence页面ID通常是数字
+                if part.isdigit() and len(part) > 4:
                     return part
-            
-            # 尝试从锚点中提取
+
             if parsed.fragment:
                 fragment_parts = parsed.fragment.split('/')
                 for part in fragment_parts:
                     if part.isdigit() and len(part) > 4:
                         return part
-        
         except Exception as e:
             print(f"警告：无法从URL提取页面ID: {e}")
-        
+
         return None
-    
+
+    def _extract_display_page_ref(self, url: str) -> Optional[Dict[str, str]]:
+        """从/display/SPACE/Page+Title形式URL中提取space和标题。"""
+        try:
+            parsed = urlparse(url)
+            path_parts = [part for part in parsed.path.split('/') if part]
+            if len(path_parts) < 3 or path_parts[0].lower() != "display":
+                return None
+
+            space_key = unquote_plus(path_parts[1])
+            raw_title = "/".join(path_parts[2:])
+            title = unquote_plus(raw_title).replace("+", " ")
+            if not space_key or not title:
+                return None
+
+            return {"space_key": space_key, "title": title}
+        except Exception as e:
+            print(f"警告：无法从display URL提取页面信息: {e}")
+            return None
+
     def get_page_content(self, page_url: str) -> Optional[Dict[str, Any]]:
         """
         获取Confluence页面内容
@@ -81,17 +96,38 @@ class ConfluenceClient:
             页面内容字典，包含HTML和解析后的数据
         """
         page_id = self._extract_page_id_from_url(page_url)
+        display_ref = None
         if not page_id:
-            print(f"错误：无法从URL提取页面ID: {page_url}")
-            return None
-        
-        api_url = f"{self.base_url}/rest/api/content/{page_id}?expand=body.storage,version"
+            display_ref = self._extract_display_page_ref(page_url)
+            if not display_ref:
+                print(f"错误：无法从URL提取页面ID或display页面信息: {page_url}")
+                return None
         
         try:
-            response = self.session.get(api_url)
+            if page_id:
+                response = self.session.get(
+                    f"{self.base_url}/rest/api/content/{page_id}",
+                    params={"expand": "body.storage,version"}
+                )
+            else:
+                response = self.session.get(
+                    f"{self.base_url}/rest/api/content",
+                    params={
+                        "spaceKey": display_ref["space_key"],
+                        "title": display_ref["title"],
+                        "expand": "body.storage,version"
+                    }
+                )
             response.raise_for_status()
             
             data = response.json()
+            if not page_id:
+                results = data.get("results", [])
+                if not results:
+                    print(f"错误：Confluence中未找到页面: space={display_ref['space_key']}, title={display_ref['title']}")
+                    return None
+                data = results[0]
+                page_id = data.get("id", "")
             
             return {
                 "page_id": page_id,
@@ -100,11 +136,9 @@ class ConfluenceClient:
                 "html_content": data.get("body", {}).get("storage", {}).get("value", ""),
                 "raw_data": data
             }
-        
         except requests.exceptions.RequestException as e:
             print(f"错误：获取Confluence页面失败: {e}")
             return None
-    
     def extract_next_milestone(self, html_content: str) -> str:
         """
         提取Next Milestone信息
