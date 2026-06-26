@@ -3,6 +3,11 @@
 """
 
 import sys
+from pathlib import Path
+# 获取项目根目录
+root_path = Path(__file__).parent.parent
+if str(root_path) not in sys.path:
+    sys.path.append(str(root_path))
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QTextEdit, QPushButton, QGroupBox,
@@ -16,7 +21,8 @@ from typing import Dict, Any, List
 from business.template_assembler import get_template_assembler
 from utils.config_manager import get_config_manager
 from data_sources.jira_client import get_jira_client
-from .multi_select_combo import SimpleMultiSelectComboBox
+from gui.simple_multi_select_combo import SimpleMultiSelectComboBox
+from gui.multi_select_combo import MultiSelectComboBox
 
 
 class JiraSearchWorker(QThread):
@@ -123,28 +129,44 @@ class DashboardWindow(QMainWindow):
         filter_grid = QGridLayout()
         filter_grid.setSpacing(10)
 
-        # Project ID筛选（第一个）
-        filter_grid.addWidget(QLabel("Project ID:"), 0, 0)
+        # Project ID：纯手动输入，无下拉
+        filter_grid.addWidget(QLabel("项目编号:"), 0, 0)
         self.project_id_combo = SimpleMultiSelectComboBox()
-        self.project_id_combo.setMinimumWidth(200)
+        self.project_id_combo.setMinimumWidth(220)
+        self.project_id_combo.setPlaceholderText("输入项目编号，可用逗号分隔多个")
         filter_grid.addWidget(self.project_id_combo, 0, 1)
 
-        # 优先级筛选（第二个）
+        # 优先级：下拉多选框（带下拉箭头）
         filter_grid.addWidget(QLabel("优先级:"), 0, 2)
-        self.priority_combo = SimpleMultiSelectComboBox()
-        self.priority_combo.setMinimumWidth(200)
+        self.priority_combo = MultiSelectComboBox()
+        self.priority_combo.addItems(["All", "P0", "P1", "P2", "P3"])
+        self.priority_combo.set_selected_items(["All"])
+        self.priority_combo.setMinimumWidth(220)
         filter_grid.addWidget(self.priority_combo, 0, 3)
 
-        # 状态筛选（第三个）
+        # 状态：下拉多选框（带下拉箭头）
         filter_grid.addWidget(QLabel("状态:"), 1, 0)
-        self.status_combo = SimpleMultiSelectComboBox()
-        self.status_combo.setMinimumWidth(200)
+        self.status_combo = MultiSelectComboBox()
+        self.status_combo.addItems([
+            "All",
+            "Open",
+            "In Progress",
+            "Reopened",
+            "Resolved",
+            "Closed",
+            "To Do",
+            "In Code Review",
+            "Verifying"
+        ])
+        self.status_combo.set_selected_items(["All"])
+        self.status_combo.setMinimumWidth(220)
         filter_grid.addWidget(self.status_combo, 1, 1)
 
-        # 标签筛选（第四个）
+        # 标签：纯手动输入，无下拉
         filter_grid.addWidget(QLabel("标签:"), 1, 2)
         self.label_combo = SimpleMultiSelectComboBox()
-        self.label_combo.setMinimumWidth(200)
+        self.label_combo.setMinimumWidth(220)
+        self.label_combo.setPlaceholderText("输入标签，可用逗号分隔多个")
         filter_grid.addWidget(self.label_combo, 1, 3)
 
         jira_layout.addLayout(filter_grid)
