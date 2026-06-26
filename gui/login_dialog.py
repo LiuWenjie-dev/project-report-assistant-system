@@ -152,21 +152,21 @@ class LoginDialog(QDialog):
         button_layout.addStretch()
 
         # 保存按钮
-        save_btn = QPushButton("💾 保存配置")
+        save_btn = QPushButton("保存配置")
         save_btn.setFixedSize(120, 35)
         save_btn.setStyleSheet(self.get_button_style("success"))
         save_btn.clicked.connect(lambda: self.save_credentials())
         button_layout.addWidget(save_btn)
 
         # 确定按钮
-        ok_btn = QPushButton("✅ 登录并进入")
+        ok_btn = QPushButton("登录并进入")
         ok_btn.setFixedSize(100, 35)
         ok_btn.setStyleSheet(self.get_button_style("success"))
         ok_btn.clicked.connect(self.accept)
         button_layout.addWidget(ok_btn)
 
         # 取消按钮
-        cancel_btn = QPushButton("❌ 取消")
+        cancel_btn = QPushButton("取消")
         cancel_btn.setFixedSize(100, 35)
         cancel_btn.setStyleSheet(self.get_button_style("secondary"))
         cancel_btn.clicked.connect(self.reject)
