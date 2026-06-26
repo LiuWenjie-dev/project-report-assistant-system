@@ -159,10 +159,10 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    # 检查是否需要登录
-    need_login = check_login_required()
+    # 每次启动都先显示登录配置界面，只有Jira和Confluence都登录成功后才进入仪表盘
+    need_login = True
 
-    # 如果不需要登录（已有完整凭据），直接进入仪表盘
+    # 保留直进仪表盘分支用于后续需要恢复"记住登录"时复用
     if not need_login:
         print("\n使用已保存的凭据...")
         # 创建主窗口
@@ -195,19 +195,19 @@ def main():
                     credentials["confluence"]["password"]
                 ])
 
-                # 如果Jira未配置完整，阻止进入仪表盘
-                if not jira_complete:
+                # 如果Jira或Confluence未配置完整，阻止进入仪表盘
+                if not jira_complete or not confluence_complete:
                     QMessageBox.critical(None, "登录失败",
-                                       "Jira凭据配置不完整！\n"
-                                       "请完整填写Jira的URL、用户名和密码。\n"
-                                       "没有Jira登录无法使用报告助手的主要功能。")
-                    print("登录失败: Jira凭据不完整")
+                                       "Jira和Confluence凭据都必须配置完整！\n"
+                                       "请完整填写两者的URL、用户名和密码。\n"
+                                       "两边登录成功后才能进入报告助手页面。")
+                    print("登录失败: Jira或Confluence凭据不完整")
 
                     # 询问用户是否重试
                     retry = QMessageBox.question(
                         None,
                         "登录失败",
-                        "Jira凭据配置不完整！是否重新尝试登录？",
+                        "Jira和Confluence凭据都必须配置完整！是否重新尝试登录？",
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                         QMessageBox.StandardButton.Yes
                     )
@@ -220,13 +220,7 @@ def main():
                     continue
 
                 # 登录成功
-                if jira_complete and confluence_complete:
-                    message = "所有凭据已配置"
-                elif jira_complete:
-                    message = "Jira凭据已配置，Confluence可稍后配置"
-                else:
-                    message = "未配置任何凭据"
-
+                message = "Jira和Confluence凭据均已配置"
                 print(f"登录成功: {message}")
 
                 # 登录成功后立即保存凭据，确保仪表板里的JiraClient能读取到配置
@@ -237,18 +231,18 @@ def main():
                     credentials["jira"]["username"],
                     credentials["jira"]["password"]
                 )
-                if confluence_complete:
-                    config_manager.set_confluence_config(
-                        credentials["confluence"]["url"],
-                        credentials["confluence"]["username"],
-                        credentials["confluence"]["password"]
-                    )
-
+                config_manager.set_confluence_config(
+                    credentials["confluence"]["url"],
+                    credentials["confluence"]["username"],
+                    credentials["confluence"]["password"]
+                )
                 # 重置Jira客户端单例，强制重新初始化
                 from data_sources.jira_client import _jira_client
                 # 使用模块级别的全局变量
                 import data_sources.jira_client
+                import data_sources.confluence_client
                 data_sources.jira_client._jira_client = None
+                data_sources.confluence_client._confluence_client = None
 
                 # 创建仪表盘窗口
                 print("启动仪表板...")

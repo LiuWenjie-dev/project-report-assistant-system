@@ -75,19 +75,26 @@ class LoginWorker(QThread):
 
     def test_confluence(self):
         """测试Confluence连接"""
+        if not self.url or not self.username or not self.password:
+            return False, "Confluence连接失败：URL、用户名或密码为空"
+
         try:
-            # 这里使用实际的Confluence客户端测试
-            # 暂时模拟成功
-            import time
-            time.sleep(1)
+            import requests
+            from urllib.parse import urljoin
 
-            # 实际实现时应该这样：
-            # confluence = Confluence(url=self.url, username=self.username, password=self.password)
-            # spaces = confluence.get_all_spaces()
+            session = requests.Session()
+            session.auth = (self.username, self.password)
+            session.headers.update({"Accept": "application/json"})
+            current_user_url = urljoin(self.url.rstrip("/") + "/", "rest/api/user/current")
+            response = session.get(current_user_url, timeout=10)
 
-            return True, "连接成功！"
+            if response.status_code == 200:
+                return True, "Confluence连接成功！"
+            if response.status_code in (401, 403):
+                return False, "Confluence连接失败：无效的用户名或密码"
+            return False, f"Confluence连接失败：HTTP {response.status_code}"
         except Exception as e:
-            return False, f"连接失败: {str(e)}"
+            return False, f"Confluence连接测试异常: {str(e)}"
 
 
 class LoginDialog(QDialog):
@@ -99,6 +106,8 @@ class LoginDialog(QDialog):
         self.setMinimumSize(600, 500)
 
         self.login_workers = []
+        self.login_results = {"jira": None, "confluence": None}
+        self.accept_after_all_tests = False
         self.setup_ui()
         self.load_saved_credentials()
 
@@ -146,11 +155,11 @@ class LoginDialog(QDialog):
         save_btn = QPushButton("💾 保存配置")
         save_btn.setFixedSize(120, 35)
         save_btn.setStyleSheet(self.get_button_style("success"))
-        save_btn.clicked.connect(self.save_credentials)
+        save_btn.clicked.connect(lambda: self.save_credentials())
         button_layout.addWidget(save_btn)
 
         # 确定按钮
-        ok_btn = QPushButton("✅ 确定")
+        ok_btn = QPushButton("✅ 登录并进入")
         ok_btn.setFixedSize(100, 35)
         ok_btn.setStyleSheet(self.get_button_style("success"))
         ok_btn.clicked.connect(self.accept)
@@ -352,8 +361,8 @@ class LoginDialog(QDialog):
         else:
             return
 
-        if not url or not username:
-            QMessageBox.warning(self, "警告", f"请填写{service}的URL和用户名")
+        if not url or not username or not password:
+            QMessageBox.warning(self, "警告", f"请填写{service}的URL、用户名和密码")
             return
 
         # 更新状态
@@ -371,70 +380,56 @@ class LoginDialog(QDialog):
 
     def test_all_connections(self):
         """测试所有连接"""
-        # 先检查必填项
         errors = []
 
         jira_url = self.jira_url_edit.text().strip()
         jira_username = self.jira_username_edit.text().strip()
-        if not jira_url or not jira_username:
-            errors.append("Jira URL和用户名")
+        jira_password = self.jira_password_edit.text().strip()
+        if not jira_url or not jira_username or not jira_password:
+            errors.append("Jira URL、用户名和密码")
 
         confluence_url = self.confluence_url_edit.text().strip()
         confluence_username = self.confluence_username_edit.text().strip()
-        if not confluence_url or not confluence_username:
-            errors.append("Confluence URL和用户名")
+        confluence_password = self.confluence_password_edit.text().strip()
+        if not confluence_url or not confluence_username or not confluence_password:
+            errors.append("Confluence URL、用户名和密码")
 
         if errors:
+            self.accept_after_all_tests = False
             QMessageBox.warning(self, "警告", f"请先填写: {', '.join(errors)}")
             return
 
-        # 显示进度条
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 2)
         self.progress_bar.setValue(0)
         self.status_label.setText("正在测试所有连接...")
 
-        # 测试Jira
         self.jira_status_label.setText("状态: 测试中...")
         self.jira_status_label.setStyleSheet("color: #f39c12; font-weight: bold; padding: 5px;")
-
-        # 测试Confluence
         self.confluence_status_label.setText("状态: 测试中...")
         self.confluence_status_label.setStyleSheet("color: #f39c12; font-weight: bold; padding: 5px;")
 
-        # 创建并启动工作线程
         self.login_workers.clear()
+        self.login_results = {"jira": None, "confluence": None}
 
-        # Jira worker
-        jira_worker = LoginWorker(
-            "jira",
-            jira_url,
-            jira_username,
-            self.jira_password_edit.text().strip()
-        )
+        jira_worker = LoginWorker("jira", jira_url, jira_username, jira_password)
         jira_worker.login_finished.connect(
             lambda s, success, msg: self.on_all_login_finished(s, success, msg)
         )
 
-        # Confluence worker
-        confluence_worker = LoginWorker(
-            "confluence",
-            confluence_url,
-            confluence_username,
-            self.confluence_password_edit.text().strip()
-        )
+        confluence_worker = LoginWorker("confluence", confluence_url, confluence_username, confluence_password)
         confluence_worker.login_finished.connect(
             lambda s, success, msg: self.on_all_login_finished(s, success, msg)
         )
 
         self.login_workers.extend([jira_worker, confluence_worker])
 
-        # 启动线程
         for worker in self.login_workers:
             worker.start()
 
     def on_login_finished(self, service: str, success: bool, message: str, status_label: QLabel):
         """单个登录完成"""
+        self.login_results[service] = success
         if success:
             status_label.setText(f"状态: ✓ {message}")
             status_label.setStyleSheet("color: #27ae60; font-weight: bold; padding: 5px;")
@@ -444,6 +439,7 @@ class LoginDialog(QDialog):
 
     def on_all_login_finished(self, service: str, success: bool, message: str):
         """所有登录完成处理"""
+        self.login_results[service] = success
         # 更新进度条
         current_value = self.progress_bar.value()
         self.progress_bar.setValue(current_value + 1)
@@ -464,13 +460,25 @@ class LoginDialog(QDialog):
             confluence_ok = "✓" in self.confluence_status_label.text()
 
             if jira_ok and confluence_ok:
-                QMessageBox.information(self, "成功", "所有连接测试成功！")
+                if self.accept_after_all_tests:
+                    if self.save_credentials(show_message=False):
+                        self.accept_after_all_tests = False
+                        super(LoginDialog, self).accept()
+                    else:
+                        self.accept_after_all_tests = False
+                else:
+                    QMessageBox.information(self, "成功", "所有连接测试成功！")
             else:
-                QMessageBox.warning(self, "警告", "部分连接测试失败，请检查配置")
+                self.accept_after_all_tests = False
+                QMessageBox.warning(self, "警告", "Jira和Confluence都必须登录成功后才能进入报告助手页面")
 
-    def save_credentials(self):
+    def accept(self):
+        """只有两套连接都测试成功后才关闭登录弹窗。"""
+        self.accept_after_all_tests = True
+        self.test_all_connections()
+
+    def save_credentials(self, show_message: bool = True) -> bool:
         """保存凭据"""
-        # 收集数据
         credentials = {
             "jira": {
                 "url": self.jira_url_edit.text().strip(),
@@ -484,37 +492,35 @@ class LoginDialog(QDialog):
             }
         }
 
-        # 验证必填项
-        if not credentials["jira"]["url"] or not credentials["jira"]["username"]:
-            QMessageBox.warning(self, "警告", "请填写Jira的URL和用户名")
-            return
-
+        missing = []
+        for service_name, label in (("jira", "Jira"), ("confluence", "Confluence")):
+            service = credentials[service_name]
+            if not service["url"] or not service["username"] or not service["password"]:
+                missing.append(f"{label}的URL、用户名和密码")
+        if missing:
+            QMessageBox.warning(self, "警告", "请填写" + "、".join(missing))
+            return False
 
         try:
-            # 保存到配置管理器
             config = get_config_manager()
+            config.set_jira_config(
+                credentials["jira"]["url"],
+                credentials["jira"]["username"],
+                credentials["jira"]["password"]
+            )
+            config.set_confluence_config(
+                credentials["confluence"]["url"],
+                credentials["confluence"]["username"],
+                credentials["confluence"]["password"]
+            )
 
-            # 保存Jira配置
-            if credentials["jira"]["password"]:
-                config.set_jira_config(
-                    credentials["jira"]["url"],
-                    credentials["jira"]["username"],
-                    credentials["jira"]["password"]
-                )
-
-            # 保存Confluence配置
-            if credentials["confluence"]["password"]:
-                config.set_confluence_config(
-                    credentials["confluence"]["url"],
-                    credentials["confluence"]["username"],
-                    credentials["confluence"]["password"]
-                )
-
-            QMessageBox.information(self, "成功", "凭据保存成功！")
+            if show_message:
+                QMessageBox.information(self, "成功", "凭据保存成功！")
             self.status_label.setText("凭据已保存")
-
+            return True
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存失败: {str(e)}")
+            return False
 
     def get_credentials(self) -> Dict[str, Any]:
         """获取凭据数据"""

@@ -389,18 +389,21 @@ class DashboardWindow(QMainWindow):
         """打开登录配置对话框。"""
         from gui.login_dialog import LoginDialog
         import data_sources.jira_client
+        import data_sources.confluence_client
         dialog = LoginDialog(self)
         if dialog.exec():
             credentials = dialog.get_credentials()
             jira = credentials.get("jira", {})
             confluence = credentials.get("confluence", {})
-            if not jira.get("url") or not jira.get("username") or not jira.get("password"):
-                QMessageBox.warning(self, "配置未保存", "请完整填写Jira的URL、用户名和密码")
+            jira_complete = jira.get("url") and jira.get("username") and jira.get("password")
+            confluence_complete = confluence.get("url") and confluence.get("username") and confluence.get("password")
+            if not jira_complete or not confluence_complete:
+                QMessageBox.warning(self, "配置未保存", "请完整填写Jira和Confluence的URL、用户名和密码")
                 return
             self.config_manager.set_jira_config(jira["url"], jira["username"], jira["password"])
-            if confluence.get("url") and confluence.get("username") and confluence.get("password"):
-                self.config_manager.set_confluence_config(confluence["url"], confluence["username"], confluence["password"])
+            self.config_manager.set_confluence_config(confluence["url"], confluence["username"], confluence["password"])
             data_sources.jira_client._jira_client = None
+            data_sources.confluence_client._confluence_client = None
             self.status_bar.showMessage("登录配置已保存，正在重新加载Jira选项...")
             self.load_jira_options()
 
